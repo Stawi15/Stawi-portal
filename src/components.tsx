@@ -1,14 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { X, ImagePlus, ArrowUpRight, CalendarDays } from "lucide-react";
-import {
-  categories,
-  isImageUrl,
-  typeLabels,
-  type ContentItem,
-  type ContentType,
-  type ContentStatus,
-  type MediaItem,
-} from "./data";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { X, ImagePlus, Search, Check } from "lucide-react";
+import { formatDate, mediaLabel, type MediaAsset } from "./types";
 
 export function Modal({
   title,
@@ -56,11 +48,11 @@ export function Modal({
   );
 }
 
-export function StatusBadge({ status }: { status: ContentStatus }) {
+export function StatusBadge({ published }: { published: boolean }) {
   return (
-    <span className={`status status-${status.toLowerCase()}`}>
+    <span className={`status ${published ? "status-published" : "status-draft"}`}>
       <span />
-      {status}
+      {published ? "Published" : "Draft"}
     </span>
   );
 }
@@ -70,7 +62,7 @@ export function ContentImage({
   alt,
   className = "",
 }: {
-  src: string;
+  src: string | null | undefined;
   alt: string;
   className?: string;
 }) {
@@ -88,220 +80,256 @@ export function ContentImage({
     <div
       className={`image-placeholder ${className}`}
       role="img"
-      aria-label={`${alt} (image unavailable)`}
+      aria-label={alt ? `${alt} (image unavailable)` : "No image selected"}
     >
       <ImagePlus size={24} />
     </div>
   );
 }
 
-export function ContentEditor({
-  item,
-  initialType,
-  media,
-  onClose,
-  onSave,
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
 }: {
-  item?: ContentItem;
-  initialType: ContentType;
-  media: MediaItem[];
-  onClose: () => void;
-  onSave: (item: ContentItem) => Promise<void>;
+  title: string;
+  message: ReactNode;
+  confirmLabel: string;
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onConfirm: () => void;
 }) {
-  const [type, setType] = useState(item?.type ?? initialType);
-  const [title, setTitle] = useState(item?.title ?? "");
-  const [category, setCategory] = useState(
-    item?.category ?? categories[initialType][0],
-  );
-  const [description, setDescription] = useState(item?.description ?? "");
-  const [image, setImage] = useState(item?.image ?? "");
-  const [status, setStatus] = useState<ContentStatus>(item?.status ?? "Draft");
-  const [publishAt, setPublishAt] = useState(item?.publishAt ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    if (!title.trim() || !description.trim()) {
-      setError("Please enter a title and content.");
-      return;
-    }
-    if (image && !isImageUrl(image)) {
-      setError("Use an HTTP(S) image URL or an image from the media library.");
-      return;
-    }
-    if (
-      status === "Scheduled" &&
-      (!publishAt || new Date(publishAt).getTime() <= Date.now())
-    ) {
-      setError("Choose a future publication date.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSave({
-        id: item?.id ?? crypto.randomUUID(),
-        type,
-        title: title.trim(),
-        category,
-        description: description.trim(),
-        image,
-        status,
-        publishAt: status === "Scheduled" ? publishAt : "",
-        updatedAt: new Date().toISOString(),
-        author: item?.author ?? "Stawi Team",
-      });
-      onClose();
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Unable to save content.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <Modal
-      title={item ? "Edit content" : "Create something meaningful"}
-      onClose={onClose}
-      wide
-    >
-      <form onSubmit={submit} className="editor">
-        <p className="muted">
-          Give your next story, project, or product a home.
-        </p>
-        <div className="form-row">
-          <label>
-            Content type
-            <select
-              value={type}
-              onChange={(e) => {
-                const next = e.target.value as ContentType;
-                setType(next);
-                setCategory(categories[next][0]);
-              }}
-            >
-              {Object.entries(typeLabels).map(([value, text]) => (
-                <option key={value} value={value}>
-                  {text}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Category
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              {categories[type].map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label>
-          Title
-          <input
-            required
-            maxLength={140}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="A great story starts with a great title"
-          />
-        </label>
-        <label>
-          Content / description
-          <textarea
-            required
-            rows={6}
-            maxLength={20000}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Tell the story behind the experience..."
-          />
-        </label>
-        <div className="form-row">
-          <label>
-            Cover image URL
-            <input
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="https://..."
-            />
-          </label>
-          <label>
-            Or choose from your library
-            <select
-              value={media.some((m) => m.url === image) ? image : ""}
-              onChange={(e) => setImage(e.target.value)}
-            >
-              <option value="">Select an image</option>
-              {media.map((m) => (
-                <option key={m.id} value={m.url}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {image && (
-          <ContentImage
-            src={image}
-            alt="Cover preview"
-            className="editor-image"
-          />
-        )}
-        <div className="form-row">
-          <label>
-            Status
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as ContentStatus)}
-            >
-              <option>Draft</option>
-              <option>Published</option>
-              <option>Scheduled</option>
-            </select>
-          </label>
-          {status === "Scheduled" && (
-            <label>
-              Publish date & time
-              <input
-                required
-                type="datetime-local"
-                value={publishAt}
-                onChange={(e) => setPublishAt(e.target.value)}
-              />
-            </label>
-          )}
-        </div>
-        <div className="local-notice">
-          <CalendarDays size={16} /> Demo mode: publishing and scheduling update
-          local content only.
-        </div>
+    <Modal title={title} onClose={onCancel}>
+      <div className="confirmation">
+        <p>{message}</p>
         {error && (
           <p className="form-error" role="alert">
             {error}
           </p>
         )}
         <div className="modal-actions">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={onClose}
-            disabled={saving}
-          >
+          <button className="button secondary" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="button primary" disabled={saving}>
-            {saving ? "Saving..." : "Save content"}
-            <ArrowUpRight size={16} />
+          <button className="button danger" disabled={busy} onClick={onConfirm}>
+            {busy ? "Working..." : confirmLabel}
           </button>
         </div>
-      </form>
+      </div>
     </Modal>
   );
+}
+
+export function TagInput({
+  label,
+  values,
+  onChange,
+  suggestions = [],
+  placeholder,
+}: {
+  label: string;
+  values: string[];
+  onChange: (next: string[]) => void;
+  suggestions?: string[];
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const remaining = suggestions.filter((item) => !values.includes(item));
+
+  function add(raw: string) {
+    const value = raw.trim();
+    if (!value || values.includes(value)) return;
+    onChange([...values, value]);
+    setDraft("");
+  }
+
+  return (
+    <div className="tag-field">
+      <span className="tag-field-label">{label}</span>
+      <div className="tag-list">
+        {values.map((value) => (
+          <span className="tag-chip" key={value}>
+            {value}
+            <button
+              type="button"
+              aria-label={`Remove ${value}`}
+              onClick={() => onChange(values.filter((item) => item !== value))}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          placeholder={placeholder ?? "Type and press Enter"}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              add(draft);
+            } else if (e.key === "Backspace" && !draft && values.length) {
+              onChange(values.slice(0, -1));
+            }
+          }}
+          onBlur={() => add(draft)}
+          aria-label={`Add ${label.toLowerCase()}`}
+        />
+      </div>
+      {remaining.length > 0 && (
+        <div className="tag-suggestions">
+          {remaining.map((item) => (
+            <button type="button" key={item} onClick={() => add(item)}>
+              + {item}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MediaPicker({
+  media,
+  selectedIds = [],
+  multiple = false,
+  onClose,
+  onSelect,
+}: {
+  media: MediaAsset[];
+  selectedIds?: string[];
+  multiple?: boolean;
+  onClose: () => void;
+  onSelect: (ids: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string[]>(selectedIds);
+  const [shown, setShown] = useState(48);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return media;
+    return media.filter((item) =>
+      `${item.title ?? ""} ${item.alt_text} ${item.object_key ?? ""}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [media, query]);
+
+  function toggle(id: string) {
+    if (!multiple) {
+      onSelect([id]);
+      return;
+    }
+    setPicked((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    );
+  }
+
+  return (
+    <Modal
+      title={multiple ? "Choose images" : "Choose an image"}
+      onClose={onClose}
+      wide
+    >
+      <div className="picker">
+        <div className="search-input">
+          <Search size={16} />
+          <input
+            aria-label="Search media"
+            placeholder="Search by name, alt text, or file..."
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShown(48);
+            }}
+          />
+          {query && (
+            <button
+              className="icon-button"
+              aria-label="Clear search"
+              onClick={() => setQuery("")}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        <div className="picker-grid">
+          {filtered.slice(0, shown).map((item) => {
+            const selected = picked.includes(item.id);
+            return (
+              <button
+                type="button"
+                key={item.id}
+                className={`picker-item ${selected ? "is-selected" : ""}`}
+                onClick={() => toggle(item.id)}
+                aria-pressed={selected}
+              >
+                <ContentImage src={item.url} alt={item.alt_text || mediaLabel(item)} />
+                {selected && (
+                  <span className="picker-check">
+                    <Check size={14} />
+                  </span>
+                )}
+                <span className="picker-name" title={mediaLabel(item)}>
+                  {mediaLabel(item)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {filtered.length === 0 && (
+          <p className="empty-state">No images match your search.</p>
+        )}
+        {filtered.length > shown && (
+          <button
+            type="button"
+            className="button secondary picker-more"
+            onClick={() => setShown(shown + 48)}
+          >
+            Show more ({filtered.length - shown} remaining)
+          </button>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="button secondary" onClick={onClose}>
+            Cancel
+          </button>
+          {multiple && (
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => onSelect(picked)}
+            >
+              Use {picked.length} image{picked.length === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function MediaThumb({
+  mediaById,
+  mediaId,
+  alt,
+  className = "",
+}: {
+  mediaById: Map<string, MediaAsset>;
+  mediaId: string | null;
+  alt: string;
+  className?: string;
+}) {
+  const media = mediaId ? mediaById.get(mediaId) : undefined;
+  return <ContentImage src={media?.url} alt={alt} className={className} />;
+}
+
+export function UpdatedCell({ value }: { value: string }) {
+  return <td className="date-cell">{formatDate(value)}</td>;
 }

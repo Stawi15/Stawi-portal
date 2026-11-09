@@ -1,11 +1,14 @@
 # Stawi Portal
 
-A responsive content dashboard for Stawi Experiences, built with React, TypeScript, and Vite.
+The content management system (CMS) for the Stawi Experiences website, built with
+React, TypeScript, and Vite, and connected to the Stawi InsForge backend
+(PostgreSQL, authentication, and file storage).
 
 ## Run locally
 
 ```sh
 npm install
+cp .env.example .env.local   # fill in the InsForge URL and anon key
 npm run dev
 ```
 
@@ -19,40 +22,70 @@ npm run build
 
 Use `npm run format` to format the source files.
 
+## Configuration
+
+The portal reads its backend connection from environment variables
+(see [.env.example](.env.example)):
+
+- `VITE_INSFORGE_URL` — the InsForge backend base URL.
+- `VITE_INSFORGE_ANON_KEY` — the InsForge anon key (public, shipped to the browser).
+
+Both values are available in the InsForge dashboard under **Install → API Keys**.
+
+### Temporarily disabling sign-in
+
+To open the dashboard directly without the sign-in screen, set in `.env.local`:
+
+```sh
+VITE_DISABLE_AUTH=true
+VITE_PORTAL_SERVICE_EMAIL=...   # a verified account listed in cms_editors
+VITE_PORTAL_SERVICE_PASSWORD=...
+```
+
+The portal then signs in silently with that service account. **Anyone who can
+open the portal can edit website content while this is on.** Set
+`VITE_DISABLE_AUTH=false` (and rotate or delete the service account) to restore
+the normal sign-in screen; no other changes are needed.
+
 ## Features
 
-- Overview with content totals, recent activity, quick actions, and explicitly illustrative activity charts.
-- Create, edit, preview, and delete news, projects, and products.
-- Search content and filter by draft, published, or scheduled status.
-- Media library with JPG, PNG, and WebP uploads (2 MB per file in demo mode).
-- Cover image selection from the library or an HTTP(S) image URL.
-- JSON backup and restore, plus a confirmed demo reset.
+- **Sign in / sign up** with email and password, including 6-digit email
+  verification for new accounts. Editor access is granted by an administrator.
+- **Overview** with live counts of projects, resources, and media, recently
+  updated content, and recent activity.
+- **Projects**: create, edit, publish/unpublish, and delete the projects shown
+  in the website's work section — title, slug, client, services, categories,
+  story paragraphs, cover image, ordered photo gallery, SEO fields, and display
+  order.
+- **Resources**: manage the guides and tools section — title, description,
+  label, audience, link, image, order, and publish state.
+- **Media library**: browse and search all website images, upload new ones to
+  InsForge storage, edit names/alt text, copy links, and delete unused images
+  (deletion is blocked while an image is still used by content).
+- **Team access** (admins only): grant or remove editor/admin access by email.
 - Responsive navigation and accessible modal dialogs.
 
-## Demo limitations
+## Backend model
 
-The portal uses browser `localStorage`. Publishing changes only local status; it does **not** update the live website. Scheduling records a future time but does not automatically publish. Charts show sample data, not measured website analytics. No authentication or authorization is implemented. Do not store sensitive data or use this as a production admin portal.
+Content lives in the InsForge PostgreSQL database:
 
-Sample content and images reference the original Stawi website, but the content descriptions are illustrative. Images require an internet connection; unavailable images show a placeholder. Browser storage is limited, so large uploads can exhaust it; save failures are reported and unsaved changes are not shown as successful. Export backups regularly. Clearing browser data removes local content.
+- `projects` + `project_gallery` — work case studies and their image galleries.
+- `resources` — downloadable guides and tools.
+- `media_assets` — image metadata; files live in the public `website-media`
+  storage bucket.
+- `cms_editors` — who can edit (role `editor` or `admin`).
 
-Restoring a JSON export replaces the entire local workspace. Removing an image used as a content cover is blocked until the cover is changed.
+Row Level Security enforces permissions server-side: anonymous visitors can
+read only published content, and all writes require a `cms_editors` row (or
+InsForge project-admin status), checked by the `is_cms_editor()` /
+`is_cms_admin()` database functions. Team management uses the
+`add_cms_editor_by_email`, `list_cms_editors`, and `remove_cms_editor` RPCs.
 
-## Connecting a backend
-
-The data model is defined in [src/data.ts](src/data.ts). Storage is separated behind `ContentRepository` in [src/repository.ts](src/repository.ts). Replace `getRepository()` with an authenticated API adapter implementing `load()` and `save()`, or evolve the interface to per-resource operations when the backend contract is known.
-
-The production integration needs:
-
-1. Authentication and server-enforced roles for editors/admins.
-2. CRUD endpoints for news, projects, and products, with schema validation.
-3. Object storage uploads rather than base64 images in browser storage.
-4. A public website API exposing only published content.
-5. Backend scheduling and a reliable publish workflow, including time zone handling.
-6. Server-side audit logs and real analytics, replacing the illustrative chart.
-7. Pagination, concurrency control, and durable backups.
-
-The live public website remains unchanged. A frontend alone cannot publish into its current static data; wire the public website to the backend's published-content endpoints as part of the integration.
+Publishing is immediate: content marked **Published** is readable by the public
+website right away; drafts are visible only to signed-in editors.
 
 ## Deployment
 
-Run `npm run build` and deploy `dist/` to Vercel or another static host. Vercel can use the Vite preset with this folder as the project root. The dashboard uses in-app navigation, so no server route rewrite is required.
+Run `npm run build` and deploy `dist/` to Vercel or another static host, with
+the two `VITE_INSFORGE_*` environment variables set at build time. The
+dashboard uses in-app navigation, so no server route rewrite is required.
